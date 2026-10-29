@@ -9,6 +9,10 @@
 //   GET  /callback?code&state             popup: exchanges the code, postMessages the token
 //                                          to the origin from /login, closes
 //   POST /refresh  { refresh_token }      CORS (allowed origins only): new token pair
+//   GET  /asset?repo=o/r&id=<asset id>    CORS: streams a release asset using the caller's
+//                                          own token (Authorization: Bearer …). GitHub's
+//                                          asset storage sends no CORS headers, so the
+//                                          portal cannot download it directly.
 //
 // Env: GITHUB_CLIENT_ID, ALLOWED_ORIGINS (comma-separated). Secret: GITHUB_CLIENT_SECRET.
 
@@ -111,16 +115,23 @@ async function callback(request, url) {
   });
 }
 
-async function refresh(request) {
+// CORS for the allowed portal origins. Returns { cors } or { response } to send as-is.
+function corsFor(request, methods, headers) {
   const origin = request.headers.get('origin') ?? '';
-  if (!allowedOrigins().includes(origin)) return text(403, 'origin not allowed');
+  if (!allowedOrigins().includes(origin)) return { response: text(403, 'origin not allowed') };
   const cors = { 'access-control-allow-origin': origin, vary: 'origin' };
-  if (request.method === 'OPTIONS') {
-    return new Response(null, {
+  if (request.method !== 'OPTIONS') return { cors };
+  return {
+    response: new Response(null, {
       status: 204,
-      headers: { ...cors, 'access-control-allow-methods': 'POST', 'access-control-allow-headers': 'content-type', 'access-control-max-age': '600' },
-    });
-  }
+      headers: { ...cors, 'access-control-allow-methods': methods, 'access-control-allow-headers': headers, 'access-control-max-age': '600' },
+    }),
+  };
+}
+
+async function refresh(request) {
+  const { cors, response } = corsFor(request, 'POST', 'content-type');
+  if (response) return response;
   const { refresh_token: refreshToken } = await request.json().catch(() => ({}));
   if (!refreshToken) return text(400, 'refresh_token required');
   const token = await exchange({ grant_type: 'refresh_token', refresh_token: refreshToken });
@@ -130,11 +141,49 @@ async function refresh(request) {
   });
 }
 
+// GitHub naming: owner = alphanumerics and single hyphens; repo = [\w.-] but never
+// "." or ".." (which would let the request path escape /repos/<owner>/<repo>).
+const REPO = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/(?!\.{1,2}$)[\w.-]{1,100}$/;
+
+// Hosts GitHub redirects asset downloads to (signed, short-lived URLs).
+const ASSET_HOST = /^(objects|release-assets)\.githubusercontent\.com$/;
+
+async function asset(request, url) {
+  const { cors, response } = corsFor(request, 'GET', 'authorization');
+  if (response) return response;
+  const repo = url.searchParams.get('repo') ?? '';
+  const id = url.searchParams.get('id') ?? '';
+  const auth = request.headers.get('authorization') ?? '';
+  if (!REPO.test(repo) || !/^\d+$/.test(id) || !auth.startsWith('Bearer ')) {
+    return new Response('repo, numeric id and a Bearer token are required', { status: 400, headers: { ...noStore, ...cors } });
+  }
+  // The caller's own token: the broker adds no access of its own.
+  const meta = await fetch(`https://api.github.com/repos/${repo}/releases/assets/${id}`, {
+    headers: { accept: 'application/octet-stream', authorization: auth, 'user-agent': 'gdr-gh-broker', 'x-github-api-version': '2022-11-28' },
+    redirect: 'manual',
+  });
+  let res = meta;
+  if (meta.status >= 300 && meta.status < 400) {
+    // The FastEdge JS runtime does not follow redirects; follow GitHub's one hop.
+    const location = new URL(meta.headers.get('location') ?? '', 'https://github.com');
+    if (location.protocol !== 'https:' || !ASSET_HOST.test(location.hostname)) {
+      return new Response('unexpected asset redirect', { status: 502, headers: { ...noStore, ...cors } });
+    }
+    res = await fetch(location.toString(), { headers: { accept: 'application/octet-stream' } });
+  }
+  if (!res.ok) return new Response(`GitHub returned ${res.status}`, { status: res.status, headers: { ...noStore, ...cors } });
+  return new Response(res.body, {
+    status: 200,
+    headers: { ...noStore, ...cors, 'content-type': 'application/octet-stream' },
+  });
+}
+
 async function handle(request) {
   const url = new URL(request.url);
   if (url.pathname === '/login' && request.method === 'GET') return login(url);
   if (url.pathname === '/callback' && request.method === 'GET') return callback(request, url);
   if (url.pathname === '/refresh' && ['POST', 'OPTIONS'].includes(request.method)) return refresh(request);
+  if (url.pathname === '/asset' && ['GET', 'OPTIONS'].includes(request.method)) return asset(request, url);
   return text(404, 'not found');
 }
 

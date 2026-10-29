@@ -22,6 +22,15 @@ const MARKER = 'uses: godronus-org/fastedge-actions/.github/workflows/fastedge-r
 let auth = null, newest = null;
 const log = (msg, cls = '') => { document.getElementById('log').innerHTML += `<span class="${cls}">${msg}</span>\n`; };
 
+// Release asset bytes: through the broker (GitHub's asset storage has no CORS).
+async function viaBroker(repo, id) {
+  const res = await fetch(`${BROKER}/asset?repo=${encodeURIComponent(repo)}&id=${id}`, {
+    headers: { authorization: `Bearer ${auth.access_token}` },
+  });
+  if (!res.ok) throw new Error(`broker /asset → ${res.status}`);
+  return res.arrayBuffer();
+}
+
 async function gh(path, accept = 'application/vnd.github+json') {
   const res = await fetch(`https://api.github.com${path}`, {
     headers: { accept, authorization: `Bearer ${auth.access_token}`, 'x-github-api-version': '2022-11-28' },
@@ -65,12 +74,12 @@ document.getElementById('check').onclick = async () => {
 document.getElementById('download').onclick = async () => {
   const { repo, tag, wasm, sha } = newest;
   try {
-    const expected = new TextDecoder().decode(await gh(`/repos/${repo}/releases/assets/${sha.id}`, 'application/octet-stream')).split(/\s+/)[0];
-    const bytes = await gh(`/repos/${repo}/releases/assets/${wasm.id}`, 'application/octet-stream');
+    const expected = new TextDecoder().decode(await viaBroker(repo, sha.id)).split(/\s+/)[0];
+    const bytes = await viaBroker(repo, wasm.id);
     const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), (b) => b.toString(16).padStart(2, '0')).join('');
-    log(`${tag}: downloaded ${wasm.name} in the browser (${bytes.byteLength} bytes)`, 'ok');
+    log(`${tag}: downloaded ${wasm.name} via broker /asset (${bytes.byteLength} bytes)`, 'ok');
     log(digest === expected ? `SHA-256 matches ${digest}` : `SHA-256 MISMATCH ${digest} != ${expected}`, digest === expected ? 'ok' : 'bad');
-  } catch (err) { log(`download failed (CORS? → broker /asset pass-through needed): ${err.message}`, 'bad'); }
+  } catch (err) { log(`download failed: ${err.message}`, 'bad'); }
 };
 
 document.getElementById('refresh').onclick = async () => {
