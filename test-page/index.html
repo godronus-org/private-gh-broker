@@ -1,0 +1,82 @@
+<!doctype html>
+<!-- POC test page standing in for the portal's Deployments tab (GH-20).
+     Serve on http://localhost:8000 (allowed origin on the preprod broker):
+       python3 -m http.server 8000 --directory test-page -->
+<html lang="en">
+<meta charset="utf-8">
+<title>Broker test</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; max-width: 900px; }
+  input { width: 320px; } pre { background: #f4f4f4; padding: 8px; white-space: pre-wrap; }
+  .ok { color: #070; } .bad { color: #b00; }
+</style>
+<h1>GitHub broker test</h1>
+<p><button id="login">1. Sign in with GitHub</button> <span id="who"></span></p>
+<p>Repo <input id="repo" value="godronus-org/private-shop"> <button id="check">2. Detect + list versions</button></p>
+<p><button id="download" disabled>3. Download newest .wasm + verify SHA-256</button>
+   <button id="refresh" disabled>4. Refresh token</button></p>
+<pre id="log"></pre>
+<script>
+const BROKER = 'https://gdr-gh-broker-preprod-4732724.fastedge.cdn.gc.onl';
+const MARKER = 'uses: godronus-org/fastedge-actions/.github/workflows/fastedge-release.yaml@';
+let auth = null, newest = null;
+const log = (msg, cls = '') => { document.getElementById('log').innerHTML += `<span class="${cls}">${msg}</span>\n`; };
+
+async function gh(path, accept = 'application/vnd.github+json') {
+  const res = await fetch(`https://api.github.com${path}`, {
+    headers: { accept, authorization: `Bearer ${auth.access_token}`, 'x-github-api-version': '2022-11-28' },
+  });
+  if (!res.ok) throw new Error(`${path} → ${res.status}`);
+  return accept.includes('json') ? res.json() : res.arrayBuffer();
+}
+
+window.addEventListener('message', async (e) => {
+  if (e.origin !== BROKER || e.data?.type !== 'fastedge-github-auth') return; // only the broker
+  auth = e.data;
+  log(`token received (expires in ${auth.expires_in}s, refresh token: ${auth.refresh_token ? 'yes' : 'no'})`, 'ok');
+  const user = await gh('/user');
+  document.getElementById('who').textContent = `signed in as ${user.login}`;
+  document.getElementById('refresh').disabled = false;
+});
+
+document.getElementById('login').onclick = () =>
+  window.open(`${BROKER}/login?origin=${encodeURIComponent(location.origin)}`, 'gh', 'width=600,height=700');
+
+document.getElementById('check').onclick = async () => {
+  const repo = document.getElementById('repo').value.trim();
+  try {
+    let found = false;
+    try {
+      for (const f of await gh(`/repos/${repo}/contents/.github/workflows`)) {
+        const file = await gh(`/repos/${repo}/contents/${f.path}`);
+        if (atob(file.content.replace(/\n/g, '')).includes(MARKER)) { found = f.path; break; }
+      }
+    } catch (err) { log(`workflows: ${err.message}`); }
+    log(found ? `set up: ${found} calls fastedge-release` : 'not set up — would offer the GH-17 link', found ? 'ok' : 'bad');
+    const releases = await gh(`/repos/${repo}/releases?per_page=20`);
+    const versions = releases.map((r) => ({ tag: r.tag_name, pre: r.prerelease, wasm: r.assets.find((a) => a.name.endsWith('.wasm')), sha: r.assets.find((a) => a.name.endsWith('.wasm.sha256')) }))
+      .filter((v) => v.wasm && v.sha);
+    log(`versions (${versions.length}): ${versions.map((v) => v.tag + (v.pre ? ' (pre)' : '')).join(', ')}`);
+    newest = versions[0] ? { repo, ...versions[0] } : null;
+    document.getElementById('download').disabled = !newest;
+  } catch (err) { log(err.message, 'bad'); }
+};
+
+document.getElementById('download').onclick = async () => {
+  const { repo, tag, wasm, sha } = newest;
+  try {
+    const expected = new TextDecoder().decode(await gh(`/repos/${repo}/releases/assets/${sha.id}`, 'application/octet-stream')).split(/\s+/)[0];
+    const bytes = await gh(`/repos/${repo}/releases/assets/${wasm.id}`, 'application/octet-stream');
+    const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), (b) => b.toString(16).padStart(2, '0')).join('');
+    log(`${tag}: downloaded ${wasm.name} in the browser (${bytes.byteLength} bytes)`, 'ok');
+    log(digest === expected ? `SHA-256 matches ${digest}` : `SHA-256 MISMATCH ${digest} != ${expected}`, digest === expected ? 'ok' : 'bad');
+  } catch (err) { log(`download failed (CORS? → broker /asset pass-through needed): ${err.message}`, 'bad'); }
+};
+
+document.getElementById('refresh').onclick = async () => {
+  const res = await fetch(`${BROKER}/refresh`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refresh_token: auth.refresh_token }) });
+  const body = await res.json().catch(() => ({}));
+  if (body.access_token) { auth = { ...auth, ...body }; log('refreshed — new token pair', 'ok'); } else log(`refresh failed: ${res.status} ${body.error ?? ''}`, 'bad');
+};
+</script>
+</html>
