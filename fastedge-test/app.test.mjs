@@ -65,6 +65,24 @@ await runAndExit(defineTestSuite({
       },
     },
     {
+      name: '/asset refuses foreign origins, and needs repo, numeric id and a Bearer token',
+      async run(runner) {
+        const get = (path, headers) => runHttpRequest(runner, { path, method: 'GET', headers });
+        assertHttpStatus(await get('/asset?repo=o/r&id=1', { origin: 'https://evil.example.com', authorization: 'Bearer x' }), 403);
+        assertHttpStatus(await get('/asset?repo=o/r&id=1', { origin: PORTAL }), 400);
+        assertHttpStatus(await get('/asset?repo=o/r&id=abc', { origin: PORTAL, authorization: 'Bearer x' }), 400);
+        assertHttpStatus(await get('/asset?repo=../x&id=1', { origin: PORTAL, authorization: 'Bearer x' }), 400);
+      },
+    },
+    {
+      name: '/asset preflight allows the Authorization header for the portal only',
+      async run(runner) {
+        const res = await runHttpRequest(runner, { path: '/asset', method: 'OPTIONS', headers: { origin: PORTAL } });
+        assertHttpStatus(res, 204);
+        assert(header(res, 'access-control-allow-headers') === 'authorization', 'allow-headers');
+      },
+    },
+    {
       name: 'anything else is 404',
       async run(runner) {
         assertHttpStatus(await runHttpRequest(runner, { path: '/', method: 'GET' }), 404);
