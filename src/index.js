@@ -21,6 +21,10 @@ const MESSAGE_TYPE = 'fastedge-github-auth';
 const allowedOrigins = () =>
   (getEnv('ALLOWED_ORIGINS') ?? '').split(',').map((o) => o.trim()).filter(Boolean);
 
+// FastEdge terminates TLS before the app, so request.url reports http://;
+// GitHub must get the https callback that is registered on the App.
+const callbackUrl = (url) => `https://${url.host}/callback`;
+
 const noStore = { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' };
 
 const text = (status, body) =>
@@ -61,7 +65,7 @@ function login(url) {
   const state = nonce();
   const authorize = new URL('https://github.com/login/oauth/authorize');
   authorize.searchParams.set('client_id', getEnv('GITHUB_CLIENT_ID') ?? '');
-  authorize.searchParams.set('redirect_uri', `${url.origin}/callback`);
+  authorize.searchParams.set('redirect_uri', callbackUrl(url));
   authorize.searchParams.set('state', state);
   return new Response(null, {
     status: 302,
@@ -82,7 +86,7 @@ async function callback(request, url) {
   const code = url.searchParams.get('code');
   if (!code) return text(400, url.searchParams.get('error_description') ?? 'no code');
 
-  const token = await exchange({ code, redirect_uri: `${url.origin}/callback` });
+  const token = await exchange({ code, redirect_uri: callbackUrl(url) });
   if (!token.access_token) return text(502, `GitHub refused the sign-in: ${token.error ?? 'unknown error'}`);
 
   const message = JSON.stringify({
