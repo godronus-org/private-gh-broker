@@ -71,7 +71,9 @@ await runAndExit(defineTestSuite({
         assertHttpStatus(await get('/asset?repo=o/r&id=1', { origin: 'https://evil.example.com', authorization: 'Bearer x' }), 403);
         assertHttpStatus(await get('/asset?repo=o/r&id=1', { origin: PORTAL }), 400);
         assertHttpStatus(await get('/asset?repo=o/r&id=abc', { origin: PORTAL, authorization: 'Bearer x' }), 400);
-        assertHttpStatus(await get('/asset?repo=../x&id=1', { origin: PORTAL, authorization: 'Bearer x' }), 400);
+        for (const bad of ['../x', 'o/..', 'o/.', '-o/r', 'o/r/x']) {
+          assertHttpStatus(await get(`/asset?repo=${encodeURIComponent(bad)}&id=1`, { origin: PORTAL, authorization: 'Bearer x' }), 400);
+        }
       },
     },
     {

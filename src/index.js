@@ -141,6 +141,10 @@ async function refresh(request) {
   });
 }
 
+// GitHub naming: owner = alphanumerics and single hyphens; repo = [\w.-] but never
+// "." or ".." (which would let the request path escape /repos/<owner>/<repo>).
+const REPO = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/(?!\.{1,2}$)[\w.-]{1,100}$/;
+
 // Hosts GitHub redirects asset downloads to (signed, short-lived URLs).
 const ASSET_HOST = /^(objects|release-assets)\.githubusercontent\.com$/;
 
@@ -150,7 +154,7 @@ async function asset(request, url) {
   const repo = url.searchParams.get('repo') ?? '';
   const id = url.searchParams.get('id') ?? '';
   const auth = request.headers.get('authorization') ?? '';
-  if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !/^\d+$/.test(id) || !auth.startsWith('Bearer ')) {
+  if (!REPO.test(repo) || !/^\d+$/.test(id) || !auth.startsWith('Bearer ')) {
     return new Response('repo, numeric id and a Bearer token are required', { status: 400, headers: { ...noStore, ...cors } });
   }
   // The caller's own token: the broker adds no access of its own.
