@@ -16,7 +16,7 @@
     // ENV name -> FastEdge secret name; the value is created in the portal, never in git.
     "secrets": { "GITHUB_CLIENT_SECRET": "gdr-gh-broker-client-secret" },
   },
-
+doe
   // POC: test accounts only (F17). Names start with "gdr-" (F25).
   "environments": {
     "preprod": { "app": {

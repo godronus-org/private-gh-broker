@@ -116,6 +116,10 @@ async function callback(request, url) {
 }
 
 // CORS for the allowed portal origins. Returns { cors } or { response } to send as-is.
+// A preflight from an allowed origin accepts the headers the browser asks for:
+// the portal's page may add its own (e.g. tracing) headers to every request.
+// Note: the FastEdge platform rewrites Access-Control-Allow-Origin to "*", so
+// callers must not send credentials (cookies) — the token goes in a header/body.
 function corsFor(request, methods, headers) {
   const origin = request.headers.get('origin') ?? '';
   if (!allowedOrigins().includes(origin)) return { response: text(403, 'origin not allowed') };
@@ -124,7 +128,12 @@ function corsFor(request, methods, headers) {
   return {
     response: new Response(null, {
       status: 204,
-      headers: { ...cors, 'access-control-allow-methods': methods, 'access-control-allow-headers': headers, 'access-control-max-age': '600' },
+      headers: {
+        ...cors,
+        'access-control-allow-methods': methods,
+        'access-control-allow-headers': request.headers.get('access-control-request-headers') || headers,
+        'access-control-max-age': '600',
+      },
     }),
   };
 }

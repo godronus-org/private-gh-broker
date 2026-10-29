@@ -85,6 +85,17 @@ await runAndExit(defineTestSuite({
       },
     },
     {
+      name: 'preflight from the portal accepts the headers the browser requests (e.g. tracing)',
+      async run(runner) {
+        const res = await runHttpRequest(runner, {
+          path: '/refresh', method: 'OPTIONS',
+          headers: { origin: PORTAL, 'access-control-request-headers': 'content-type,sentry-trace,baggage' },
+        });
+        assertHttpStatus(res, 204);
+        assert(header(res, 'access-control-allow-headers') === 'content-type,sentry-trace,baggage', 'echoed headers');
+      },
+    },
+    {
       name: 'anything else is 404',
       async run(runner) {
         assertHttpStatus(await runHttpRequest(runner, { path: '/', method: 'GET' }), 404);
