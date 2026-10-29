@@ -23,7 +23,7 @@ await runAndExit(defineTestSuite({
         const location = new URL(header(res, 'location'));
         assert(location.origin === 'https://github.com' && location.pathname === '/login/oauth/authorize', `location ${location}`);
         assert(location.searchParams.get('client_id') === 'Iv1.testclient', 'client_id');
-        assert(location.searchParams.get('redirect_uri')?.endsWith('/callback'), 'redirect_uri');
+        assert(/^https:\/\/[^/]+\/callback$/.test(location.searchParams.get('redirect_uri')), 'redirect_uri is https');
         const state = location.searchParams.get('state');
         assert(/^[0-9a-f]{48}$/.test(state), 'state is a 24-byte hex nonce');
         const cookie = [header(res, 'set-cookie')].flat().join('\n'); // runner returns set-cookie as an array
