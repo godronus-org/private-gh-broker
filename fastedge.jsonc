@@ -19,7 +19,11 @@
 
   // POC: test accounts only (F17). Names start with "gdr-" (F25).
   "environments": {
-    "preprod": { "app": { "name": "gdr-gh-broker-preprod" } },
+    "preprod": { "app": {
+      "name": "gdr-gh-broker-preprod",
+      // POC: also the local test page (test-page/, served on localhost:8000).
+      "env": { "ALLOWED_ORIGINS": "https://portal.preprod.world,http://localhost:8000" }
+    } },
     "prod": {},
   },
 }
