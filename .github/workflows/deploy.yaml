@@ -1,0 +1,24 @@
+name: Deploy
+
+# preprod: merge to main, or Run workflow (any branch). prod: release tag on main.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: Deploy to preprod even if tests are missing or failing
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.repository_owner == 'godronus-org'
+    uses: godronus-org/toolkit/.github/workflows/deploy.yaml@v1
+    with:
+      skip_tests: ${{ inputs.skip_tests || false }}
+    secrets: inherit

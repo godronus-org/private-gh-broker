@@ -1,0 +1,25 @@
+{
+  "$schema": "https://raw.githubusercontent.com/godronus-org/toolkit/v1/schema/fastedge.schema.json",
+  // GitHub sign-in broker for the portal's Deployments tab (POC, GH-20).
+  // Preprod only: the portal under test is portal.preprod.world.
+  "kind": "app",
+  "runtime": "http-app",
+  "language": "js",
+  "build": { "output": "wasm/gh-broker.wasm" },
+
+  "app": {
+    "name": "gdr-gh-broker",
+    "env": {
+      "GITHUB_CLIENT_ID": "Iv23liJZutR9VGsh4HXb",
+      "ALLOWED_ORIGINS": "https://portal.preprod.world",
+    },
+    // ENV name -> FastEdge secret name; the value is created in the portal, never in git.
+    "secrets": { "GITHUB_CLIENT_SECRET": "gdr-gh-broker-client-secret" },
+  },
+
+  // POC: test accounts only (F17). Names start with "gdr-" (F25).
+  "environments": {
+    "preprod": { "app": { "name": "gdr-gh-broker-preprod" } },
+    "prod": {},
+  },
+}

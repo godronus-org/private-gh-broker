@@ -1,0 +1,16 @@
+{
+  "name": "gh-broker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "GitHub sign-in broker for the portal Deployments tab (POC)",
+  "scripts": {
+    "build": "fastedge-build --input ./src/index.js --output ./wasm/gh-broker.wasm",
+    "test": "node fastedge-test/app.test.mjs"
+  },
+  "devDependencies": {
+    "@gcoredev/fastedge-sdk-js": "^2.5.0",
+    "@gcoredev/fastedge-test": "0.2.6"
+  },
+  "packageManager": "pnpm@10.26.2"
+}
